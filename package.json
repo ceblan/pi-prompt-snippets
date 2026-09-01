@@ -1,0 +1,46 @@
+{
+  "name": "pi-prompt-snippets",
+  "version": "1.0.0",
+  "description": "Composable prompt snippet injection extension with interactive TUI menu for Pi coding agent.",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "prompt-snippets",
+    "prompt-engineering",
+    "tui",
+    "developer-tools",
+    "system-prompts"
+  ],
+  "license": "MIT",
+  "author": "Arda YILDIZ",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "test": "node --test tests/**/*.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArdaYILDIZ-DEV/pi-prompt-snippets.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ArdaYILDIZ-DEV/pi-prompt-snippets/issues"
+  },
+  "homepage": "https://github.com/ArdaYILDIZ-DEV/pi-prompt-snippets#readme",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.3",
+    "@earendil-works/pi-tui": "^0.84.3",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
