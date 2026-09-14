@@ -28,6 +28,35 @@ export const BUILTIN_SNIPPETS_DIR = join(extensionDir, "snippets");
 /** Fallback sort order for snippets with a missing/invalid `order` field. */
 export const DEFAULT_ORDER = 9999;
 
+/** Default keybinding to open the snippet toggle menu. */
+export const DEFAULT_SHORTCUT = "alt+p";
+
+/**
+ * Resolves the pi config directory, honoring the same env overrides as pi
+ * itself (`PI_CODING_AGENT_DIR`, then `XDG_CONFIG_HOME/pi`, then `~/.pi`).
+ */
+export function getPiConfigDir(home = homedir()): string {
+	if (process.env.PI_CODING_AGENT_DIR) return process.env.PI_CODING_AGENT_DIR;
+	if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "pi");
+	return join(home, ".pi");
+}
+
+/**
+ * Reads the menu toggle shortcut from `<pi-config-dir>/prompt-snippets.json`
+ * (`{ "shortcut": "alt+p" }`). Falls back to {@link DEFAULT_SHORTCUT} when the
+ * file is missing, unparsable, or the `shortcut` value is not a non-empty string.
+ */
+export function loadShortcutKey(piDir = getPiConfigDir()): string {
+	try {
+		const raw = JSON.parse(readFileSync(join(piDir, "prompt-snippets.json"), "utf-8"));
+		const value = raw?.shortcut;
+		if (typeof value === "string" && value.trim()) return value.trim().toLowerCase();
+	} catch {
+		// Missing or invalid config — fall through to the default shortcut.
+	}
+	return DEFAULT_SHORTCUT;
+}
+
 /** Normalizes Windows-style CRLF line endings to LF `\n`. */
 export function normalizeNewlines(text: string): string {
 	return text.replace(/\r\n/g, "\n");

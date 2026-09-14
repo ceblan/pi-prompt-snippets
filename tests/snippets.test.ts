@@ -6,7 +6,9 @@ import { join } from "node:path";
 import {
 	BUILTIN_SNIPPETS_DIR,
 	DEFAULT_ORDER,
+	DEFAULT_SHORTCUT,
 	getSnippetDirectories,
+	loadShortcutKey,
 	loadSnippets,
 	normalizeNewlines,
 	parseSnippet,
@@ -412,6 +414,33 @@ Please refactor this function.
 					`Snippet ${s.id} should have valid placement`,
 				);
 				assert.ok(Number.isFinite(s.order), `Snippet ${s.id} should have finite order`);
+			}
+		});
+	});
+	describe("6. Shortcut Configuration", () => {
+		it("should return the default shortcut when no config file exists", () => {
+			assert.strictEqual(loadShortcutKey(join(tmpdir(), "nonexistent-pi-dir")), DEFAULT_SHORTCUT);
+		});
+		it("should read the shortcut from prompt-snippets.json", () => {
+			const dir = mkdtempSync(join(tmpdir(), "pi-snippets-cfg-"));
+			try {
+				writeFileSync(join(dir, "prompt-snippets.json"), JSON.stringify({ shortcut: "ctrl+alt+k" }));
+				assert.strictEqual(loadShortcutKey(dir), "ctrl+alt+k");
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+		it("should fall back to the default shortcut on invalid JSON or invalid values", () => {
+			const dir = mkdtempSync(join(tmpdir(), "pi-snippets-cfg-"));
+			try {
+				writeFileSync(join(dir, "prompt-snippets.json"), "{ not json");
+				assert.strictEqual(loadShortcutKey(dir), DEFAULT_SHORTCUT);
+				writeFileSync(join(dir, "prompt-snippets.json"), JSON.stringify({ shortcut: 42 }));
+				assert.strictEqual(loadShortcutKey(dir), DEFAULT_SHORTCUT);
+				writeFileSync(join(dir, "prompt-snippets.json"), JSON.stringify({ shortcut: "   " }));
+				assert.strictEqual(loadShortcutKey(dir), DEFAULT_SHORTCUT);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
 			}
 		});
 	});

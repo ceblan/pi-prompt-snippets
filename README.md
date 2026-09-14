@@ -64,13 +64,25 @@ to subagents. Keep your own context window lean.
 
 *Note: Files with empty bodies or invalid frontmatter boundaries are skipped automatically without interrupting execution.*
 
+### Configuration
+
+The toggle shortcut can be changed in `~/.pi/agent/prompt-snippets.json`:
+
+```json
+{
+  "shortcut": "alt+p"
+}
+```
+
+The default is `alt+p`. Invalid or missing configuration falls back to the default silently.
+
 ## How It Works & Usage
 
 ### Keyboard Shortcuts & Commands
 
 | Key / Command | Action |
 |---|---|
-| `Alt+S` | Open or close the interactive snippet toggle menu |
+| `Alt+P` (configurable) | Open or close the interactive snippet toggle menu |
 | `/snippets` | Open the snippet menu via slash command |
 | `↑` / `↓` | Navigate snippet list |
 | `Space` | Toggle selection for the focused snippet |
@@ -110,21 +122,21 @@ To create your own snippets, simply create a `.md` file in `~/.pi/agent/snippets
 
 `pi-prompt-snippets` includes a curated collection of standard operational presets:
 
-- `orkestrator.md`: Delegate mechanical work to subagents while maintaining high-level reasoning.
-- `dikkatli-mod.md`: Require explicit confirmation before destructive or state-altering commands.
-- `hata-avci.md`: Enforce root-cause identification before writing bug fixes.
-- `guvenlik-mercegi.md`: Review proposed changes against common vulnerability vectors (SSRF, injection, CORS, auth).
-- `kod-inceleme.md`: Review code as a senior PR reviewer with structured severity ratings.
-- `performans-odakli.md`: Analyze time/space complexity, hot paths, and memory allocations.
-- `planli-calis.md`: Require upfront step-by-step task breakdown and approval before execution.
-- `refaktor.md`: Enforce behavioral preservation and clean refactoring boundaries.
-- `sadece-teshis.md`: Produce a diagnostic analysis without modifying any codebase files.
-- `test-odakli.md`: Ensure changes include matching automated tests and regression checks.
-- `belgelendir.md`: Write docstrings, API signatures, and architectural documentation.
-- `kisa-ve-oz.md`: Keep responses terse, concise, and focused on code.
-- `once-kesfet.md`: Inspect and verify codebase patterns before proposing changes.
-- `once-sor.md`: Ask clarifying questions on ambiguous requirements rather than guessing.
-- `subagent-test-dongu.md`: Delegate automated testing across iterative multi-angle cycles.
+- `orquestador.md`: Delegate mechanical work to subagents while maintaining high-level reasoning.
+- `modo-cuidadoso.md`: Require explicit confirmation before destructive or state-altering commands.
+- `cazador-errores.md`: Enforce root-cause identification before writing bug fixes.
+- `lente-seguridad.md`: Review proposed changes against common vulnerability vectors (SSRF, injection, CORS, auth).
+- `revision-codigo.md`: Review code as a senior PR reviewer with structured severity ratings.
+- `enfoque-rendimiento.md`: Analyze time/space complexity, hot paths, and memory allocations.
+- `trabajo-planificado.md`: Require upfront step-by-step task breakdown and approval before execution.
+- `refactor.md`: Enforce behavioral preservation and clean refactoring boundaries.
+- `solo-diagnostico.md`: Produce a diagnostic analysis without modifying any codebase files.
+- `enfoque-pruebas.md`: Ensure changes include matching automated tests and regression checks.
+- `documentacion.md`: Write docstrings, API signatures, and architectural documentation.
+- `breve-y-conciso.md`: Keep responses terse, concise, and focused on code.
+- `primero-explora.md`: Inspect and verify codebase patterns before proposing changes.
+- `primero-pregunta.md`: Ask clarifying questions on ambiguous requirements rather than guessing.
+- `subagent-ciclo-pruebas.md`: Delegate automated testing across iterative multi-angle cycles.
 
 ## Testing
 

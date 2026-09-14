@@ -7,7 +7,7 @@
  * - Global user snippets (`~/.pi/agent/snippets/`)
  * - Project-level snippets (`.pi/snippets/`)
  *
- * - Press alt+s or run /snippets to open the toggle menu:
+ * - Press the configured shortcut (default alt+p) or run /snippets to open the toggle menu:
  *     ↑/↓    navigate
  *     space  toggle selection
  *     a      toggle all
@@ -29,6 +29,7 @@ import {
 	BUILTIN_SNIPPETS_DIR,
 	DEFAULT_ORDER,
 	getSnippetDirectories,
+	loadShortcutKey,
 	loadSnippets,
 	normalizeNewlines,
 	parseSnippet,
@@ -45,11 +46,14 @@ export {
 	loadSnippets,
 	normalizeNewlines,
 	parseSnippet,
+	loadShortcutKey,
 	transformPrompt,
 	type LoadResult,
 	type Placement,
 	type Snippet,
 };
+
+export { DEFAULT_SHORTCUT } from "./core.ts";
 
 export const WIDGET_ID = "prompt-snippets";
 
@@ -346,7 +350,9 @@ export default function (pi: ExtensionAPI) {
 		};
 	});
 
-	pi.registerShortcut("alt+s", {
+	const shortcutKey = loadShortcutKey();
+
+	pi.registerShortcut(shortcutKey, {
 		description: "Toggle prompt snippets",
 		handler: async (ctx) => {
 			await openMenu(ctx);
