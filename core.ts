@@ -29,12 +29,14 @@ export const BUILTIN_SNIPPETS_DIR = join(extensionDir, "snippets");
 export const DEFAULT_ORDER = 9999;
 
 /** Default keybinding to open the snippet toggle menu. */
+// @lat: [[lat#Prompt Snippets#Shortcut Configuration]]
 export const DEFAULT_SHORTCUT = "alt+p";
 
 /**
  * Resolves the pi config directory, honoring the same env overrides as pi
  * itself (`PI_CODING_AGENT_DIR`, then `XDG_CONFIG_HOME/pi`, then `~/.pi`).
  */
+// @lat: [[lat#Prompt Snippets#Shortcut Configuration]]
 export function getPiConfigDir(home = homedir()): string {
 	if (process.env.PI_CODING_AGENT_DIR) return process.env.PI_CODING_AGENT_DIR;
 	if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "pi");
@@ -46,6 +48,7 @@ export function getPiConfigDir(home = homedir()): string {
  * (`{ "shortcut": "alt+p" }`). Falls back to {@link DEFAULT_SHORTCUT} when the
  * file is missing, unparsable, or the `shortcut` value is not a non-empty string.
  */
+// @lat: [[lat#Prompt Snippets#Shortcut Configuration]]
 export function loadShortcutKey(piDir = getPiConfigDir()): string {
 	try {
 		const raw = JSON.parse(readFileSync(join(piDir, "prompt-snippets.json"), "utf-8"));
@@ -58,6 +61,7 @@ export function loadShortcutKey(piDir = getPiConfigDir()): string {
 }
 
 /** Normalizes Windows-style CRLF line endings to LF `\n`. */
+// @lat: [[lat#Prompt Snippets#Tests#Newline Normalization]]
 export function normalizeNewlines(text: string): string {
 	return text.replace(/\r\n/g, "\n");
 }
@@ -68,6 +72,7 @@ export function normalizeNewlines(text: string): string {
  * 2. User-level snippets (`~/.pi/agent/snippets`)
  * 3. Workspace-level snippets (`<cwd>/.pi/snippets`)
  */
+// @lat: [[lat#Prompt Snippets#Snippet Loading#Snippet Directories]]
 export function getSnippetDirectories(cwd = process.cwd(), home = homedir()): string[] {
 	const dirs: string[] = [BUILTIN_SNIPPETS_DIR];
 
@@ -88,6 +93,7 @@ export function getSnippetDirectories(cwd = process.cwd(), home = homedir()): st
  * Parses a snippet file's frontmatter and body.
  * Returns `null` if the file has no valid frontmatter block or an empty body.
  */
+// @lat: [[lat#Prompt Snippets#Tests#Frontmatter Parsing]]
 export function parseSnippet(filename: string, raw: string, sourceDir?: string): Snippet | null {
 	const text = normalizeNewlines(raw);
 	const match = text.match(/^---(?:\n([\s\S]*?))?\n---\n?([\s\S]*)$/);
@@ -129,6 +135,7 @@ export interface LoadResult {
  * Loads all snippets from target directories, sorted: prepend group first, append group last, each by (order, name).
  * When multiple directories contain a snippet with the same filename, higher priority directories override lower ones.
  */
+// @lat: [[lat#Prompt Snippets#Tests#Directory Loading]]
 export function loadSnippets(dirs?: string[]): LoadResult {
 	const targetDirs = dirs ?? getSnippetDirectories();
 	const snippetMap = new Map<string, Snippet>();
@@ -173,6 +180,7 @@ export function loadSnippets(dirs?: string[]): LoadResult {
 }
 
 /** Injects active snippets around user prompt text. */
+// @lat: [[lat#Prompt Snippets#Tests#Prompt Transformation]]
 export function transformPrompt(text: string, activeSnippets: Snippet[]): string {
 	const prependBodies = activeSnippets.filter((s) => s.placement === "prepend").map((s) => s.body);
 	const appendBodies = activeSnippets.filter((s) => s.placement === "append").map((s) => s.body);

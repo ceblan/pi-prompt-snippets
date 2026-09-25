@@ -16,6 +16,7 @@ import {
 	type Snippet,
 } from "../core.ts";
 
+// @lat: [[lat#Prompt Snippets#Tests]]
 describe("Prompt Snippets Test Suite", () => {
 	describe("1. Newline Normalization", () => {
 		it("should normalize Windows CRLF to LF", () => {

@@ -62,6 +62,7 @@ export const MENU_CHROME_ROWS = 10;
 /** Minimum content rows shown in the menu, even on very short terminals. */
 export const MENU_MIN_VIEW_ROWS = 5;
 
+// @lat: [[lat#Prompt Snippets]]
 export default function (pi: ExtensionAPI) {
 	// Snippets last seen on disk (sorted). Refreshed whenever the menu opens or a message is sent.
 	let snippets: Snippet[] = [];
@@ -70,6 +71,7 @@ export default function (pi: ExtensionAPI) {
 	// Guards against opening a second overlay while the menu is already active.
 	let menuOpen = false;
 
+	// @lat: [[lat#Prompt Snippets#Toggle Menu]]
 	function updateWidget(ctx: ExtensionContext) {
 		if (!ctx.hasUI || ctx.mode !== "tui") return;
 		const active = snippets.filter((s) => enabled.has(s.id));
@@ -96,6 +98,7 @@ export default function (pi: ExtensionAPI) {
 	 * Reloads snippets from disk and drops enabled ids for snippets that no
 	 * longer exist. Optionally warns the user about files that failed to parse.
 	 */
+	// @lat: [[lat#Prompt Snippets#Snippet Loading]]
 	function refresh(ctx: ExtensionContext, notifyFailures: boolean): LoadResult {
 		const result = loadSnippets();
 		snippets = result.snippets;
@@ -109,6 +112,7 @@ export default function (pi: ExtensionAPI) {
 		return result;
 	}
 
+	// @lat: [[lat#Prompt Snippets#Toggle Menu]]
 	async function openMenu(ctx: ExtensionContext) {
 		if (ctx.mode !== "tui") {
 			ctx.ui.notify("Snippet menu requires interactive mode", "warning");
