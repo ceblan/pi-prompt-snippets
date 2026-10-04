@@ -7,12 +7,14 @@ import {
 	BUILTIN_SNIPPETS_DIR,
 	DEFAULT_ORDER,
 	DEFAULT_SHORTCUT,
+	fuzzyMatchIndices,
 	getSnippetDirectories,
 	loadShortcutKey,
 	loadSnippets,
 	normalizeNewlines,
 	parseSnippet,
 	transformPrompt,
+	visibleSnippets,
 	type Snippet,
 } from "../core.ts";
 
@@ -443,6 +445,72 @@ Please refactor this function.
 			} finally {
 				rmSync(dir, { recursive: true, force: true });
 			}
+		});
+	});
+
+	// @lat: [[lat#Prompt Snippets#Tests#Menu Fuzzy Filtering]]
+	describe("7. Menu Fuzzy Filtering (visibleSnippets)", () => {
+		const group: Snippet[] = [
+			{ id: "refactor.md", name: "Refactor", description: "refactors step by step", placement: "prepend", order: 1, body: "b" },
+			{ id: "cuidadoso.md", name: "Modo cuidadoso", description: "verifica antes de responder", placement: "prepend", order: 2, body: "b" },
+			{ id: "conciso.md", name: "Conciso", description: "short answers", placement: "prepend", order: 3, body: "b" },
+		];
+
+		it("should return the full group for an empty or whitespace-only query", () => {
+			assert.deepStrictEqual(visibleSnippets(group, "", new Set()), group);
+			assert.deepStrictEqual(visibleSnippets(group, "   ", new Set()), group);
+		});
+
+		it("should filter by name and by description", () => {
+			const byName = visibleSnippets(group, "refac", new Set());
+			assert.deepStrictEqual(byName.map((s) => s.id), ["refactor.md"]);
+
+			const byDesc = visibleSnippets(group, "verifica", new Set());
+			assert.deepStrictEqual(byDesc.map((s) => s.id), ["cuidadoso.md"]);
+		});
+
+		it("should keep selected snippets visible even when they do not match", () => {
+			const selected = new Set(["conciso.md"]);
+			const result = visibleSnippets(group, "refac", selected);
+			assert.deepStrictEqual(result.map((s) => s.id), ["refactor.md", "conciso.md"]);
+		});
+
+		it("should preserve the input order (no score re-ranking)", () => {
+			const result = visibleSnippets(group, "o", new Set());
+			const expected = group.filter((s) => result.some((r) => r.id === s.id)).map((s) => s.id);
+			assert.deepStrictEqual(result.map((s) => s.id), expected);
+		});
+
+		it("should return an empty list when nothing matches and nothing is selected", () => {
+			assert.deepStrictEqual(visibleSnippets(group, "zzzz", new Set()), []);
+		});
+	});
+
+	// @lat: [[lat#Prompt Snippets#Tests#Fuzzy Match Indices]]
+	describe("8. Fuzzy Match Indices (fuzzyMatchIndices)", () => {
+		it("should return the consumed character indices for a complete match", () => {
+			assert.deepStrictEqual(fuzzyMatchIndices("mc", "Modo cuidadoso"), [0, 5]);
+			assert.deepStrictEqual(fuzzyMatchIndices("ref", "Refactor"), [0, 1, 2]);
+		});
+
+		it("should consume greedily from left to right", () => {
+			// The greedy sweep picks the earliest candidate for each query char.
+			assert.deepStrictEqual(fuzzyMatchIndices("oo", "foo boo"), [1, 2]);
+		});
+
+		it("should return null when there is no complete match", () => {
+			assert.strictEqual(fuzzyMatchIndices("zzz", "Modo cuidadoso"), null);
+			assert.strictEqual(fuzzyMatchIndices("refactorz", "Refactor"), null);
+		});
+
+		it("should match case-insensitively", () => {
+			assert.deepStrictEqual(fuzzyMatchIndices("MODO", "modo cuidadoso"), [0, 1, 2, 3]);
+			assert.deepStrictEqual(fuzzyMatchIndices("modo", "MODO CUIDADOSO"), [0, 1, 2, 3]);
+		});
+
+		it("should trim the query and match everything on an empty query", () => {
+			assert.deepStrictEqual(fuzzyMatchIndices("", "anything"), []);
+			assert.deepStrictEqual(fuzzyMatchIndices("   ", "anything"), []);
 		});
 	});
 });

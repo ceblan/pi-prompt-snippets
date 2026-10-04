@@ -8,11 +8,14 @@
  * - Project-level snippets (`.pi/snippets/`)
  *
  * - Press the configured shortcut (default alt+p) or run /snippets to open the toggle menu:
- *     ↑/↓    navigate
+ *     tab / h / l / ← / →   switch between the PREPEND and APPEND tabs
+ *     ↑/↓    navigate the visible snippets of the active tab
+ *     /      fuzzy search by name or description (per tab; enter confirms, esc clears;
+ *            checked snippets stay visible even when they do not match)
  *     space  toggle selection
- *     a      toggle all
- *     tab    preview snippet body
- *     enter  apply selection (also confirms from preview)
+ *     a      toggle all visible snippets of the tab
+ *     p      preview snippet body
+ *     enter  apply selection (also applies from preview)
  *     esc    cancel
  * - Active snippets appear as a widget above the editor, with prepend and
  *   append groups visually distinguished.
@@ -24,16 +27,18 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Input, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	BUILTIN_SNIPPETS_DIR,
 	DEFAULT_ORDER,
+	fuzzyMatchIndices,
 	getSnippetDirectories,
 	loadShortcutKey,
 	loadSnippets,
 	normalizeNewlines,
 	parseSnippet,
 	transformPrompt,
+	visibleSnippets,
 	type LoadResult,
 	type Placement,
 	type Snippet,
@@ -42,12 +47,14 @@ import {
 export {
 	BUILTIN_SNIPPETS_DIR,
 	DEFAULT_ORDER,
+	fuzzyMatchIndices,
 	getSnippetDirectories,
 	loadSnippets,
 	normalizeNewlines,
 	parseSnippet,
 	loadShortcutKey,
 	transformPrompt,
+	visibleSnippets,
 	type LoadResult,
 	type Placement,
 	type Snippet,
@@ -57,8 +64,19 @@ export { DEFAULT_SHORTCUT } from "./core.ts";
 
 export const WIDGET_ID = "prompt-snippets";
 
-/** Rows reserved by the menu chrome (borders, title, hints) outside the scrollable content area. */
-export const MENU_CHROME_ROWS = 10;
+/** Which placement group a menu tab shows. */
+type TabId = Placement;
+
+/** Per-tab menu state: search query plus remembered cursor and scroll. */
+interface TabState {
+	query: string;
+	searching: boolean;
+	cursor: number;
+	scroll: number;
+}
+
+/** Rows reserved by the menu chrome (borders, title, tab bar, search line, hints) outside the scrollable content area. */
+export const MENU_CHROME_ROWS = 11;
 /** Minimum content rows shown in the menu, even on very short terminals. */
 export const MENU_MIN_VIEW_ROWS = 5;
 
@@ -134,56 +152,96 @@ export default function (pi: ExtensionAPI) {
 			const working = new Set(enabled);
 
 			const confirmed = await ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
-				const prepends = snippets.filter((s) => s.placement === "prepend");
-				const appends = snippets.filter((s) => s.placement === "append");
-				const items = [...prepends, ...appends];
+				// Placement groups are fixed for the lifetime of the menu.
+				const groups: Record<TabId, Snippet[]> = {
+					prepend: snippets.filter((s) => s.placement === "prepend"),
+					append: snippets.filter((s) => s.placement === "append"),
+				};
 
-				let mode: "list" | "preview" = "list";
-				let cursor = 0;
-				let listScroll = 0;
+				let activeTab: TabId = "prepend";
+				const tabs: Record<TabId, TabState> = {
+					prepend: { query: "", searching: false, cursor: 0, scroll: 0 },
+					append: { query: "", searching: false, cursor: 0, scroll: 0 },
+				};
+				let previewing: Snippet | null = null;
 				let previewScroll = 0;
 
+				const input = new Input({ prompt: "/", placeholder: "fuzzy: nombre o descripción" });
+
+				/** Visible snippets of a tab: fuzzy matches plus checked items, stable order. */
+				const visibleOf = (tab: TabId): Snippet[] => visibleSnippets(groups[tab], tabs[tab].query, working);
+
+				const clampCursor = (tab: TabId) => {
+					tabs[tab].cursor = Math.min(tabs[tab].cursor, Math.max(0, visibleOf(tab).length - 1));
+				};
+
 				const moveCursor = (delta: number) => {
-					if (items.length === 0) return;
-					cursor = (cursor + delta + items.length) % items.length;
+					const count = visibleOf(activeTab).length;
+					if (count === 0) return;
+					tabs[activeTab].cursor = (tabs[activeTab].cursor + delta + count) % count;
+				};
+
+				const switchTab = () => {
+					activeTab = activeTab === "prepend" ? "append" : "prepend";
+					// Keep the shared Input in sync with the tab we are entering.
+					input.setValue(tabs[activeTab].query);
+					input.focused = tabs[activeTab].searching;
+					clampCursor(activeTab);
 				};
 
 				const toggleAll = () => {
-					if (items.length === 0) return;
-					const allEnabled = items.every((s) => working.has(s.id));
-					for (const item of items) {
+					const visible = visibleOf(activeTab);
+					if (visible.length === 0) return;
+					const allEnabled = visible.every((s) => working.has(s.id));
+					for (const item of visible) {
 						if (allEnabled) working.delete(item.id);
 						else working.add(item.id);
 					}
 				};
 
-				const itemRow = (snippet: Snippet, idx: number, width: number): string => {
-					const pointer = idx === cursor ? theme.fg("accent", "> ") : "  ";
-					const checkbox = working.has(snippet.id) ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
-					const desc = snippet.description ? theme.fg("dim", ` — ${snippet.description}`) : "";
-					return truncateToWidth(`${pointer}${checkbox} ${theme.bold(snippet.name)}${desc}`, width);
+				/** Renders `name` bold with the fuzzy-matched character runs accented. */
+				const highlightName = (name: string, indices: number[]): string => {
+					const matched = new Set(indices);
+					let out = "";
+					let run = "";
+					let runMatched = false;
+					const flush = () => {
+						if (!run) return;
+						out += runMatched ? theme.fg("accent", theme.bold(run)) : theme.bold(run);
+						run = "";
+					};
+					for (let i = 0; i < name.length; i++) {
+						const isMatch = matched.has(i);
+						if (run.length > 0 && isMatch !== runMatched) flush();
+						runMatched = isMatch;
+						run += name[i];
+					}
+					flush();
+					return out;
 				};
 
-				/** List rows with the item index each row corresponds to (null for headers/blanks). */
-				const buildListRows = (width: number): { text: string; itemIndex: number | null }[] => {
-					const rows: { text: string; itemIndex: number | null }[] = [];
-					rows.push({ text: theme.fg("dim", "↑ PREPEND — added before your message"), itemIndex: null });
-					if (prepends.length === 0) rows.push({ text: theme.fg("dim", "  (none)"), itemIndex: null });
-					prepends.forEach((s, i) => rows.push({ text: itemRow(s, i, width), itemIndex: i }));
-					rows.push({ text: "", itemIndex: null });
-					rows.push({ text: theme.fg("dim", "↓ APPEND — added after your message"), itemIndex: null });
-					if (appends.length === 0) rows.push({ text: theme.fg("dim", "  (none)"), itemIndex: null });
-					appends.forEach((s, i) =>
-						rows.push({ text: itemRow(s, prepends.length + i, width), itemIndex: prepends.length + i }),
-					);
-					return rows;
+				const itemRow = (snippet: Snippet, idx: number, width: number): string => {
+					const st = tabs[activeTab];
+					const q = st.query.trim();
+					const pointer = idx === st.cursor ? theme.fg("accent", "> ") : "  ";
+					const checkbox = working.has(snippet.id) ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
+					const indices = q ? fuzzyMatchIndices(q, snippet.name) : null;
+					const name =
+						indices !== null && indices.length > 0
+							? highlightName(snippet.name, indices)
+							: q && working.has(snippet.id)
+								? theme.fg("dim", snippet.name)
+								: theme.bold(snippet.name);
+					const desc = snippet.description ? theme.fg("dim", ` — ${snippet.description}`) : "";
+					// Highlight is applied before truncation; truncateToWidth preserves ANSI escapes.
+					return truncateToWidth(`${pointer}${checkbox} ${name}${desc}`, width, "…");
 				};
 
 				const buildPreviewRows = (snippet: Snippet, width: number): string[] => {
 					const rows: string[] = [];
-					rows.push(truncateToWidth(theme.bold(snippet.name), width));
+					rows.push(truncateToWidth(theme.bold(snippet.name), width, "…"));
 					rows.push(
-						truncateToWidth(theme.fg("dim", `${snippet.placement} · order ${snippet.order} · ${snippet.id}`), width),
+						truncateToWidth(theme.fg("dim", `${snippet.placement} · order ${snippet.order} · ${snippet.id}`), width, "…"),
 					);
 					rows.push(theme.fg("dim", "─".repeat(Math.min(width, 40))));
 					for (const line of snippet.body.split("\n")) {
@@ -192,7 +250,7 @@ export default function (pi: ExtensionAPI) {
 							continue;
 						}
 						for (const wrapped of wrapTextWithAnsi(line, width)) {
-							rows.push(truncateToWidth(wrapped, width));
+							rows.push(truncateToWidth(wrapped, width, "…"));
 						}
 					}
 					return rows;
@@ -238,83 +296,163 @@ export default function (pi: ExtensionAPI) {
 					render(width: number): string[] {
 						const maxView = Math.max(MENU_MIN_VIEW_ROWS, tui.terminal.rows - MENU_CHROME_ROWS);
 
-						let content: string[];
-						let title: string;
-						let hints: string;
-						if (mode === "list") {
-							const rows = buildListRows(width);
-							const cursorRow = rows.findIndex((r) => r.itemIndex === cursor);
-							const v = viewport(
-								rows.map((r) => r.text),
-								listScroll,
-								maxView,
-								cursorRow >= 0 ? cursorRow : undefined,
-							);
-							content = v.out;
-							listScroll = v.scroll;
-							title = "Prompt snippets";
-							hints = "↑↓ navigate • space toggle • a toggle all • tab preview • enter apply • esc cancel";
-						} else {
-							const snippet = items[cursor];
-							const rows = buildPreviewRows(snippet, width);
+						if (previewing) {
+							const rows = buildPreviewRows(previewing, width);
 							const v = viewport(rows, previewScroll, maxView);
-							content = v.out;
 							previewScroll = v.scroll;
-							title = `Preview: ${snippet.name}`;
-							hints = "↑↓ scroll • enter apply • tab/esc back";
+							return [
+								theme.fg("accent", "─".repeat(width)),
+								truncateToWidth(` ${theme.fg("accent", theme.bold(`Preview: ${previewing.name}`))}`, width, "…"),
+								"",
+								...v.out,
+								"",
+								truncateToWidth(theme.fg("dim", " ↑/↓: scroll · enter: aplicar · p/tab/esc: volver"), width, "…"),
+								theme.fg("accent", "─".repeat(width)),
+							];
 						}
+
+						const st = tabs[activeTab];
+						const group = groups[activeTab];
+						const visible = visibleOf(activeTab);
+						clampCursor(activeTab);
+
+						const tabCell = (tab: TabId): string => {
+							const count = groups[tab].filter((s) => working.has(s.id)).length;
+							const label = `${tab === "prepend" ? "↑" : "↓"} ${tab.toUpperCase()} (${count})`;
+							return tab === activeTab
+								? theme.bg("selectedBg", theme.fg("text", ` ${label} `))
+								: theme.fg("dim", ` ${label} `);
+						};
+
+						let contentRows: string[];
+						if (group.length === 0) contentRows = [theme.fg("dim", "  (none)")];
+						else if (visible.length === 0) contentRows = [theme.fg("dim", "  (no matches)")];
+						else contentRows = visible.map((s, i) => itemRow(s, i, width));
+
+						const v = viewport(contentRows, st.scroll, maxView, visible.length > 0 ? st.cursor : undefined);
+						st.scroll = v.scroll;
+
+						// The search line row is always present (empty when idle) so the
+						// layout never jumps when a search opens or closes.
+						const searchActive = st.searching || st.query !== "";
+						const searchLine = searchActive ? truncateToWidth(input.render(width)[0] ?? "", width, "…") : "";
+
+						const hints = st.searching
+							? " ↑/↓: navegar · enter: confirmar · esc: limpiar"
+							: " tab/h/l: pestañas · /: buscar · space: seleccionar · a: todos · p: preview · enter: aplicar · esc: salir";
 
 						return [
 							theme.fg("accent", "─".repeat(width)),
-							truncateToWidth(` ${theme.fg("accent", theme.bold(title))}`, width),
+							truncateToWidth(` ${theme.fg("accent", theme.bold("Prompt snippets"))}`, width, "…"),
+							truncateToWidth(`${tabCell("prepend")}${tabCell("append")}`, width, "…"),
+							searchLine,
+							...v.out,
 							"",
-							...content,
-							"",
-							truncateToWidth(theme.fg("dim", ` ${hints}`), width),
+							truncateToWidth(theme.fg("dim", hints), width, "…"),
 							theme.fg("accent", "─".repeat(width)),
 						];
 					},
-					invalidate() {},
+					invalidate() {
+						input.invalidate();
+					},
 					handleInput(data: string) {
-						if (mode === "list") {
-							if (matchesKey(data, Key.up)) {
-								moveCursor(-1);
-								tui.requestRender();
-							} else if (matchesKey(data, Key.down)) {
-								moveCursor(1);
-								tui.requestRender();
-							} else if (matchesKey(data, Key.space)) {
-								if (items.length === 0) return;
-								const id = items[cursor].id;
-								if (working.has(id)) working.delete(id);
-								else working.add(id);
-								tui.requestRender();
-							} else if (data === "a" || data === "A") {
-								toggleAll();
-								tui.requestRender();
-							} else if (matchesKey(data, Key.tab)) {
-								if (items.length === 0) return;
-								mode = "preview";
-								previewScroll = 0;
-								tui.requestRender();
-							} else if (matchesKey(data, Key.enter)) {
-								done(true);
-							} else if (matchesKey(data, Key.escape)) {
-								done(false);
-							}
-						} else {
+						const redraw = () => tui.requestRender();
+
+						if (previewing) {
 							if (matchesKey(data, Key.up)) {
 								previewScroll--;
-								tui.requestRender();
+								redraw();
 							} else if (matchesKey(data, Key.down)) {
 								previewScroll++;
-								tui.requestRender();
+								redraw();
 							} else if (matchesKey(data, Key.enter)) {
 								done(true);
-							} else if (matchesKey(data, Key.tab) || matchesKey(data, Key.escape)) {
-								mode = "list";
-								tui.requestRender();
+							} else if (data === "p" || matchesKey(data, Key.tab) || matchesKey(data, Key.escape)) {
+								// tab returns to the list without switching tabs, keeping the reading point.
+								previewing = null;
+								redraw();
 							}
+							return;
+						}
+
+						const st = tabs[activeTab];
+
+						if (st.searching) {
+							if (matchesKey(data, Key.enter)) {
+								// enter confirms the search; it never applies snippets from here.
+								st.query = input.getValue();
+								st.searching = false;
+								input.focused = false;
+								clampCursor(activeTab);
+								redraw();
+							} else if (matchesKey(data, Key.escape)) {
+								input.setValue("");
+								st.query = "";
+								st.searching = false;
+								input.focused = false;
+								clampCursor(activeTab);
+								redraw();
+							} else if (matchesKey(data, Key.up) || matchesKey(data, Key.down)) {
+								input.focused = false;
+								moveCursor(matchesKey(data, Key.up) ? -1 : 1);
+								redraw();
+							} else {
+								const before = input.getValue();
+								input.focused = true;
+								input.handleInput(data);
+								if (input.getValue() !== before) {
+									st.query = input.getValue();
+									clampCursor(activeTab);
+								}
+								// Redraw even for cursor-only edits (left/right, home/end) that
+								// leave the value unchanged, so the Input cursor repaints.
+								redraw();
+							}
+							return;
+						}
+
+						if (
+							matchesKey(data, Key.tab) ||
+							matchesKey(data, "shift+tab") ||
+							data === "h" ||
+							data === "l" ||
+							matchesKey(data, Key.left) ||
+							matchesKey(data, Key.right)
+						) {
+							switchTab();
+							redraw();
+						} else if (data === "/") {
+							st.searching = true;
+							input.setValue(st.query);
+							input.focused = true;
+							redraw();
+						} else if (matchesKey(data, Key.up)) {
+							moveCursor(-1);
+							redraw();
+						} else if (matchesKey(data, Key.down)) {
+							moveCursor(1);
+							redraw();
+						} else if (matchesKey(data, Key.space)) {
+							const item = visibleOf(activeTab)[st.cursor];
+							if (item) {
+								if (working.has(item.id)) working.delete(item.id);
+								else working.add(item.id);
+								redraw();
+							}
+						} else if (data === "a" || data === "A") {
+							toggleAll();
+							redraw();
+						} else if (data === "p" || data === "P") {
+							const item = visibleOf(activeTab)[st.cursor];
+							if (item) {
+								previewing = item;
+								previewScroll = 0;
+								redraw();
+							}
+						} else if (matchesKey(data, Key.enter)) {
+							done(true);
+						} else if (matchesKey(data, Key.escape)) {
+							done(false);
 						}
 					},
 				};

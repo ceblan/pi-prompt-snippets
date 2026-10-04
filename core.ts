@@ -7,6 +7,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fuzzyMatch } from "@earendil-works/pi-tui";
 
 /** Where a snippet's body is injected relative to the user's typed message. */
 export type Placement = "prepend" | "append";
@@ -191,4 +192,44 @@ export function transformPrompt(text: string, activeSnippets: Snippet[]): string
 	if (appendBodies.length > 0) parts.push(...appendBodies);
 
 	return parts.join("\n\n");
+}
+
+/**
+ * Greedy case-insensitive fuzzy matcher returning the indices of the `text`
+ * characters consumed by `query`, or `null` when there is no complete match.
+ * pi-tui's `fuzzyMatch` does not expose positions, so match highlighting in the
+ * toggle menu needs this position-aware variant. An empty query matches
+ * everything with no consumed characters.
+ */
+// @lat: [[lat#Prompt Snippets#Toggle Menu#Fuzzy Filtering]]
+export function fuzzyMatchIndices(query: string, text: string): number[] | null {
+	const q = query.trim().toLowerCase();
+	if (!q) return [];
+
+	const haystack = text.toLowerCase();
+	const indices: number[] = [];
+	let from = 0;
+	for (let i = 0; i < q.length; i++) {
+		const at = haystack.indexOf(q[i], from);
+		if (at === -1) return null;
+		indices.push(at);
+		from = at + 1;
+	}
+	return indices;
+}
+
+/**
+ * Filters one placement group for the toggle menu: snippets whose
+ * `name + " " + description` fuzzily match `query` (pi-tui `fuzzyMatch`),
+ * plus every snippet in `selectedIds` so checked items stay visible under
+ * any filter. Preserves the input order (stable, no score ranking) so cursor
+ * positions are predictable.
+ */
+// @lat: [[lat#Prompt Snippets#Toggle Menu#Fuzzy Filtering]]
+export function visibleSnippets(group: Snippet[], query: string, selectedIds: Set<string>): Snippet[] {
+	const q = query.trim();
+	if (!q) return group;
+	return group.filter(
+		(s) => selectedIds.has(s.id) || fuzzyMatch(q, `${s.name} ${s.description}`).matches,
+	);
 }

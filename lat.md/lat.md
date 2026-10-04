@@ -24,7 +24,19 @@ On send, active snippet bodies wrap the typed text: `prepend` group (sorted by `
 
 ## Toggle Menu
 
-The interactive TUI menu lists snippets with placement groups, supports space/a toggling, tab preview, and enter apply. Opened via the `/snippets` command or the configured global shortcut.
+The interactive TUI menu shows two independent tabs (PREPEND / APPEND) with per-tab fuzzy search, remembered cursor/scroll, and enter apply. Opened via the `/snippets` command or the configured global shortcut. Implemented in [[index.ts]] `openMenu`.
+
+Each tab keeps its own query, search focus, cursor, and scroll ([[index.ts]] `TabState`); the `working` selection set is shared so a final enter commits both tabs at once. The tab bar renders `↑ PREPEND (n)` / `↓ APPEND (n)` counters (selected in that tab) with the active tab inverted via `theme.bg("selectedBg", …)` and the inactive one dim.
+
+Keybindings: `tab`/`shift+tab`/`h`/`l`/`←`/`→` switch tabs (only when not searching — in search mode `h`/`l` type); `/` opens the per-tab search (pi-tui `Input`, prompt `/`); `enter` confirms the search or applies the selection; `esc` clears the search or closes the menu; `↑/↓` move the cursor (also from search, defocusing the input); `space` toggles; `a` toggles all visible items of the tab; `p` previews the snippet body (`p`/`tab`/`esc` return to the list; tab does not switch tabs from preview).
+
+The search line row is always rendered (empty when idle) so the layout never jumps; `MENU_CHROME_ROWS = 11` reserves borders, title, tab bar, search line, and footer. Rows truncate with `…`, and fuzzy-matched name characters are accented before truncation (ANSI-safe order: highlight → truncate). Selected snippets that do not match the query stay visible in place with a dim name; empty groups show `(none)` and empty filters show `(no matches)`.
+
+### Fuzzy Filtering
+
+Tab filtering lives in [[core.ts#visibleSnippets]]: fuzzy matches on `name + " " + description` (pi-tui `fuzzyMatch`) plus every selected id, in stable input order.
+
+[[core.ts#fuzzyMatchIndices]] is the position-aware greedy case-insensitive matcher used to accent matched name characters — pi-tui's `fuzzyMatch` does not expose positions, so highlighting needs its own sweep that reports which characters were consumed.
 
 ## Shortcut Configuration
 
@@ -34,7 +46,7 @@ Directory resolution honors pi env overrides via [[core.ts#getPiConfigDir]] (`PI
 
 ## Tests
 
-The test suite covers parsing, loading, transformation, and shortcut config using `node:test` and temporary directories to avoid touching real snippet paths.
+The test suite covers parsing, loading, transformation, fuzzy menu filtering, and shortcut config using `node:test` and temporary directories to avoid touching real snippet paths.
 
 ### Newline Normalization
 
@@ -51,6 +63,14 @@ Verifies `loadSnippets` sorts prepend-first then append-last, ignores non-markdo
 ### Prompt Transformation
 
 Checks that `transformPrompt` wraps the user's typed text with active prepend and append snippet bodies in the correct order, including the edge case of an empty prompt.
+
+### Menu Fuzzy Filtering
+
+Verifies [[core.ts#visibleSnippets]]: empty/whitespace queries return the full group, name and description both filter, selected ids stay visible without matching, order is stable, and no-match queries with nothing selected return an empty list.
+
+### Fuzzy Match Indices
+
+Verifies [[core.ts#fuzzyMatchIndices]]: complete matches return ordered greedy indices, incomplete matches return `null`, matching is case-insensitive, and empty/whitespace queries consume no characters.
 
 ### Shortcut Configuration
 
