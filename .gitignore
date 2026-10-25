@@ -5,3 +5,4 @@ dist/
 .env
 .env.*
 /lat.md/last-commit.md
+/.pi/
