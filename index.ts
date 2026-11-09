@@ -75,6 +75,11 @@ interface TabState {
 	scroll: number;
 }
 
+/** Inline options accepted by both old Pi hosts (structurally) and Pi 1.5 (natively). */
+type InlineMenuOptions = NonNullable<Parameters<ExtensionContext["ui"]["custom"]>[1]> & {
+	blocked: { kind: "question"; message: string };
+};
+
 /** Rows reserved by the menu chrome (borders, title, tab bar, search line, hints) outside the scrollable content area. */
 export const MENU_CHROME_ROWS = 11;
 /** Minimum content rows shown in the menu, even on very short terminals. */
@@ -151,6 +156,9 @@ export default function (pi: ExtensionAPI) {
 			// Working copy; only committed to `enabled` on confirm.
 			const working = new Set(enabled);
 
+			const options: InlineMenuOptions = {
+				blocked: { kind: "question", message: "Prompt snippet selection is waiting for user input" },
+			};
 			const confirmed = await ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
 				// Placement groups are fixed for the lifetime of the menu.
 				const groups: Record<TabId, Snippet[]> = {
@@ -456,7 +464,7 @@ export default function (pi: ExtensionAPI) {
 						}
 					},
 				};
-			});
+			}, options);
 
 			if (confirmed) enabled = working;
 			updateWidget(ctx);

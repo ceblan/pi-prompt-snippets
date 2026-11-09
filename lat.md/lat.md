@@ -26,6 +26,8 @@ On send, active snippet bodies wrap the typed text: `prepend` group (sorted by `
 
 The interactive TUI menu shows two independent tabs (PREPEND / APPEND) with per-tab fuzzy search, remembered cursor/scroll, and enter apply. Opened via the `/snippets` command or the configured global shortcut. Implemented in [[index.ts]] `openMenu`.
 
+While the inline menu awaits a decision, `openMenu` supplies `blocked: { kind: "question", … }` to `ctx.ui.custom`; Pi 1.5 reports that state to the terminal and closing the component clears it. A structural intersection with the host options keeps the addition type-compatible with Pi 1.4, whose runtime ignores it without a version branch. No overlay is involved, and working-copy commit/cancel plus the `finally` reset of `menuOpen` remain unchanged.
+
 Each tab keeps its own query, search focus, cursor, and scroll ([[index.ts]] `TabState`); the `working` selection set is shared so a final enter commits both tabs at once. The tab bar renders `↑ PREPEND (n)` / `↓ APPEND (n)` counters (selected in that tab) with the active tab inverted via `theme.bg("selectedBg", …)` and the inactive one dim.
 
 Keybindings: `tab`/`shift+tab`/`h`/`l`/`←`/`→` switch tabs (only when not searching — in search mode `h`/`l` type); `/` opens the per-tab search (pi-tui `Input`, prompt `/`); `enter` confirms the search or applies the selection; `esc` clears the search or closes the menu; `↑/↓` move the cursor (also from search, defocusing the input); `space` toggles; `a` toggles all visible items of the tab; `p` previews the snippet body (`p`/`tab`/`esc` return to the list; tab does not switch tabs from preview).
@@ -75,3 +77,7 @@ Verifies [[core.ts#fuzzyMatchIndices]]: complete matches return ordered greedy i
 ### Shortcut Configuration
 
 Ensures `loadShortcutKey` reads the shortcut from `prompt-snippets.json` and falls back to `DEFAULT_SHORTCUT` when the file is missing, contains invalid JSON, or holds a non-string shortcut value.
+
+### Inline Menu Blocked State
+
+Loads the real extension and inline UI through each Pi host to verify question blocking, 1.4 inertness, fuzzy tabs, Enter/Escape semantics, and clean reopening without residual state.
